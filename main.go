@@ -23,6 +23,9 @@ func main() {
 
 	api := rest.NewApi()
 	statusMW := &rest.StatusMiddleware{}
+	// StatusMiddleware must be registered in api.Use() BEFORE rest.DefaultDevStack
+	// because of an implicit dependency on RecorderMiddleware (request.ENV["STATUS_CODE"])
+	// and reverse call order of Middleware#MiddlewareFunc().
 	api.Use(statusMW)
 	api.Use(rest.DefaultDevStack...)
 	router, err := rest.MakeRouter(
