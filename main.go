@@ -6,8 +6,15 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/ant0ine/go-json-rest/rest"
+	"github.com/stephandollberg/go-json-rest-middleware-jwt"
+)
+
+const (
+	userID   = "admin"
+	password = "admin"
 )
 
 func main() {
@@ -21,6 +28,17 @@ func main() {
 		Store: map[string]*Country{},
 	}
 
+	// JSON Web Tokens middleware
+	jwtMW := &jwt.JWTMiddleware{
+		Key:        []byte("secret key"),
+		Realm:      "jwt auth",
+		Timeout:    time.Hour,
+		MaxRefresh: time.Hour * 24,
+		Authenticator: func(userid string, passwd string) bool {
+			return userid == userID && passwd == password
+		},
+	}
+
 	api := rest.NewApi()
 	statusMW := &rest.StatusMiddleware{}
 	// StatusMiddleware must be registered in api.Use() BEFORE rest.DefaultDevStack
@@ -28,12 +46,21 @@ func main() {
 	// and reverse call order of Middleware#MiddlewareFunc().
 	api.Use(statusMW)
 	api.Use(rest.DefaultDevStack...)
+	// we use the IfMiddleware to remove certain paths from needing authentication
+	api.Use(&rest.IfMiddleware{
+		Condition: func(r *rest.Request) bool {
+			return r.URL.Path != "/login"
+		},
+		IfTrue: jwtMW,
+	})
+
 	router, err := rest.MakeRouter(
 		rest.Get("/", func(w rest.ResponseWriter, r *rest.Request) {
 			if e := w.WriteJson(map[string]string{"Body": "Hello, World!"}); e != nil {
 				log.Println(e)
 			}
 		}),
+
 		rest.Get("/lookup/#host", func(w rest.ResponseWriter, r *rest.Request) {
 			ip, e := net.LookupIP(r.PathParam("host"))
 			if e != nil {
@@ -44,13 +71,19 @@ func main() {
 				log.Println(e)
 			}
 		}),
+
 		rest.Get("/countries", countries.GetAllCountries),
 		rest.Post("/countries", countries.PostCountry),
 		rest.Get("/countries/:code", countries.GetCountry),
 		rest.Delete("/countries/:code", countries.DeleteCountry),
+
 		rest.Get("/stats", func(w rest.ResponseWriter, r *rest.Request) {
 			returnJSON(w, statusMW.GetStatus())
 		}),
+
+		rest.Post("/login", jwtMW.LoginHandler),
+		rest.Get("/auth_test", handleAuth),
+		rest.Get("/refresh_token", jwtMW.RefreshHandler),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -147,4 +180,8 @@ func returnJSON(w rest.ResponseWriter, v interface{}) {
 	if e := w.WriteJson(v); e != nil {
 		log.Println(e)
 	}
+}
+
+func handleAuth(w rest.ResponseWriter, r *rest.Request) {
+	returnJSON(w, map[string]string{"authed": r.Env["REMOTE_USER"].(string)})
 }
