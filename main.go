@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -47,12 +48,12 @@ func main() {
 	api.Use(statusMW)
 	api.Use(rest.DefaultDevStack...)
 	// we use the IfMiddleware to remove certain paths from needing authentication
-	api.Use(&rest.IfMiddleware{
-		Condition: func(r *rest.Request) bool {
-			return r.URL.Path != "/login"
-		},
-		IfTrue: jwtMW,
-	})
+	//api.Use(&rest.IfMiddleware{
+	//	Condition: func(r *rest.Request) bool {
+	//		return r.URL.Path != "/login"
+	//	},
+	//	IfTrue: jwtMW,
+	//})
 
 	router, err := rest.MakeRouter(
 		rest.Get("/", func(w rest.ResponseWriter, r *rest.Request) {
@@ -84,6 +85,8 @@ func main() {
 		rest.Post("/login", jwtMW.LoginHandler),
 		rest.Get("/auth_test", handleAuth),
 		rest.Get("/refresh_token", jwtMW.RefreshHandler),
+
+		rest.Get("/stream", StreamThings),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -184,4 +187,23 @@ func returnJSON(w rest.ResponseWriter, v interface{}) {
 
 func handleAuth(w rest.ResponseWriter, r *rest.Request) {
 	returnJSON(w, map[string]string{"authed": r.Env["REMOTE_USER"].(string)})
+}
+
+// Thing is a thing.
+type Thing struct {
+	Name string
+}
+
+// StreamThings returns stream things.
+func StreamThings(w rest.ResponseWriter, r *rest.Request) {
+	cpt := 0
+	for {
+		cpt++
+		returnJSON(w, &Thing{Name: fmt.Sprintf("thing #%d", cpt)})
+		if _, e := w.(http.ResponseWriter).Write([]byte("\n")); e != nil {
+			log.Println(e)
+		}
+		w.(http.Flusher).Flush()
+		time.Sleep(time.Duration(3) * time.Second)
+	}
 }
