@@ -22,11 +22,13 @@ func main() {
 	}
 
 	api := rest.NewApi()
+	statusMW := &rest.StatusMiddleware{}
+	api.Use(statusMW)
 	api.Use(rest.DefaultDevStack...)
 	router, err := rest.MakeRouter(
 		rest.Get("/", func(w rest.ResponseWriter, r *rest.Request) {
 			if e := w.WriteJson(map[string]string{"Body": "Hello, World!"}); e != nil {
-				log.Print(e)
+				log.Println(e)
 			}
 		}),
 		rest.Get("/lookup/#host", func(w rest.ResponseWriter, r *rest.Request) {
@@ -43,11 +45,19 @@ func main() {
 		rest.Post("/countries", countries.PostCountry),
 		rest.Get("/countries/:code", countries.GetCountry),
 		rest.Delete("/countries/:code", countries.DeleteCountry),
+		rest.Get("/stats", func(w rest.ResponseWriter, r *rest.Request) {
+			returnJSON(w, statusMW.GetStatus())
+		}),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	http.Handle("/api/", http.StripPrefix("/api", api.MakeHandler()))
+	http.Handle("/static/", http.StripPrefix("/static", http.FileServer(http.Dir("."))))
+
 	api.SetApp(router)
+
 	log.Fatal(http.ListenAndServe(":"+port, api.MakeHandler()))
 }
 
